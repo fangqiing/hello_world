@@ -1,0 +1,54 @@
+{
+  "_note": "复制为 config/providers.json 再填入。providers.json 已在 .gitignore 中，不要提交。",
+  "qwen": {
+    "enabled": false,
+    "apiKey": "",
+    "baseUrl": "https://<workspace-id>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+    "dashscopeBase": "https://<workspace-id>.cn-beijing.maas.aliyuncs.com",
+    "visionModel": "qwen3-vl-plus",
+    "imageModel": "wan2.7-image",
+    "videoModel": "wan2.7-t2v"
+  },
+  "doubao": {
+    "enabled": false,
+    "apiKey": ""
+  },
+  "zhipu": {
+    "enabled": false,
+    "apiKey": ""
+  },
+  "visionChain": [
+    {
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "maxTokens": 1200
+    },
+    {
+      "provider": "qwen",
+      "model": "qwen3-vl-plus",
+      "maxTokens": 600
+    },
+    {
+      "provider": "zhipu",
+      "model": "glm-4v-flash",
+      "maxTokens": 400
+    }
+  ],
+  "generation": {
+    "provider": "qwen",
+    "imageModel": "wan2.7-image",
+    "defaultSize": "1024*1024",
+    "confirmRequired": true,
+    "confirmTtlMs": 600000,
+    "dailyLimit": 20,
+    "estimatedUnitPriceCny": 0.2,
+    "videoModel": "wan2.7-t2v",
+    "estimatedVideoUnitPriceCny": 3,
+    "pollIntervalMs": 3000,
+    "maxPolls": 40
+  },
+  "stickers": {
+    "customRoot": "/root/whale-media/stickers/custom",
+    "enabled": true
+  }
+}

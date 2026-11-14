@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>成长</title>
+<style>
+  :root{--bg:#05070d;--panel:#0b1018;--card:#0e1520;--line:#1b2433;--text:#dbe4f3;--muted:#7d8aa3;
+        --accent:#7fa6ff;--warm:#ffd48f;--left-w:330px}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font:14px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+  #app{display:flex;flex-direction:column;height:100%}
+  header{padding:14px 18px;border-bottom:1px solid var(--line);background:rgba(10,14,22,.9);
+    display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  header h1{font-size:15px;margin:0;letter-spacing:.06em;color:#cfe0ff;font-weight:600}
+  .stat{color:var(--muted);font-size:13px}
+  .stat b{color:var(--text);font-weight:600}
+  main{flex:1;display:flex;min-height:0}
+  #left{width:var(--left-w);border-right:1px solid var(--line);background:var(--panel);
+    overflow:auto;padding:16px}
+  #right{flex:1;overflow:auto;padding:16px 20px}
+  h2{font-size:12px;color:var(--muted);letter-spacing:.1em;margin:0 0 12px;font-weight:600}
+  .p-item{margin:0 0 14px;padding:11px 12px;background:var(--card);border:1px solid var(--line);border-radius:8px}
+  .p-head{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+  .p-tier{font-size:11px;padding:1px 7px;border-radius:9px;background:rgba(127,166,255,.12);
+    color:var(--accent);border:1px solid rgba(127,166,255,.22);white-space:nowrap}
+  .p-w{font-size:11px;color:var(--muted);margin-left:auto;font-variant-numeric:tabular-nums}
+  .bar{height:5px;border-radius:3px;background:#151d2a;overflow:hidden;margin-bottom:8px}
+  .bar i{display:block;height:100%;border-radius:3px;
+    background:linear-gradient(90deg,#4b6bd6,#7fa6ff,#bcd2ff)}
+  .p-text{font-size:13px;color:#c6d2e6;display:-webkit-box;-webkit-line-clamp:2;
+    -webkit-box-orient:vertical;overflow:hidden}
+  .p-text.open{-webkit-line-clamp:unset;display:block}
+  .p-more{margin-top:6px;font-size:12px;color:var(--accent);cursor:pointer;user-select:none}
+  .day{margin:0 0 22px}
+  .day-h{display:flex;align-items:center;gap:9px;margin-bottom:10px;color:var(--muted);font-size:12px}
+  .day-h::after{content:"";flex:1;height:1px;background:var(--line)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:12px 14px;margin-bottom:9px}
+  .card-h{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .kind{font-size:11px;padding:1px 7px;border-radius:9px;white-space:nowrap}
+  .kind.chapter{background:rgba(255,212,143,.12);color:var(--warm);border:1px solid rgba(255,212,143,.22)}
+  .kind.diary{background:rgba(143,227,192,.12);color:#8fe3c0;border:1px solid rgba(143,227,192,.22)}
+  .kind.open{background:rgba(255,179,200,.14);color:#ffb3c8;border:1px solid rgba(255,179,200,.25)}
+  .when{font-size:11px;color:var(--muted);margin-left:auto;font-variant-numeric:tabular-nums}
+  .body{font-size:13px;color:#c6d2e6;white-space:pre-wrap;display:-webkit-box;
+    -webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .body.open{-webkit-line-clamp:unset;display:block;max-height:none}
+  .empty{color:var(--muted);text-align:center;padding:60px 20px;line-height:2}
+  .empty b{display:block;color:#c6d2e6;font-size:14px;margin-bottom:6px}
+  ::-webkit-scrollbar{width:8px}::-webkit-scrollbar-thumb{background:#1b2433;border-radius:4px}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>成长</h1>
+    <span class="stat" id="s1"></span>
+    <span class="stat" id="s2"></span>
+    <span class="stat" id="s3"></span>
+  </header>
+  <main>
+    <section id="left">
+      <h2>她相信的东西</h2>
+      <div id="principles"></div>
+    </section>
+    <section id="right">
+      <h2>时间线</h2>
+      <div id="timeline"></div>
+    </section>
+  </main>
+</div>
+<script>
+(function(){
+  'use strict';
+  var CFG = window.HELLO_WORLD_CONFIG || {};
+  var API = String(CFG.apiBase || '').replace(/\/$/, '');
+  var PEER = String(new URLSearchParams(location.search).get('peer') || CFG.peer || '');
+  var TZ = CFG.timeZone || 'Asia/Shanghai';
+  var DEMO = /(\?|&)demo=1/.test(location.search);
+
+  // ── 时间（与 src/temporal-context.js 同算法，内联以便单文件预览）──
+  var WD={Mon:'周一',Tue:'周二',Wed:'周三',Thu:'周四',Fri:'周五',Sat:'周六',Sun:'周日'};
+  function zoned(tz,at){
+    var p={}; new Intl.DateTimeFormat('en-CA',{timeZone:tz,hour12:false,year:'numeric',month:'2-digit',
+      day:'2-digit',hour:'2-digit',minute:'2-digit',weekday:'short'})
+      .formatToParts(new Date(at)).forEach(function(x){p[x.type]=x.value;});
+    return {date:p.year+'-'+p.month+'-'+p.day,hour:Number(p.hour)%24,minute:Number(p.minute),weekdayZh:WD[p.weekday]||''};
+  }
+  function dayDiff(a,b){var A=a.split('-').map(Number),B=b.split('-').map(Number);
+    return Math.round((Date.UTC(B[0],B[1]-1,B[2])-Date.UTC(A[0],A[1]-1,A[2]))/864e5);}
+  function rel(then,now,tz){
+    var t=Number(then); if(!isFinite(t)||t<=0) return '';
+    var d=now-t;
+    if(d<60000) return '刚刚';
+    if(d<36e5) return Math.max(1,Math.round(d/6e4))+' 分钟前';
+    var a=zoned(tz,t),b=zoned(tz,now),dd=dayDiff(a.date,b.date);
+    if(dd===0) return d<108e5?Math.max(1,Math.round(d/36e5))+' 小时前':'今天';
+    if(dd===1) return '昨天';
+    if(dd===2) return '前天';
+    if(dd<7) return dd+' 天前';
+    if(dd<14) return '上周';
+    if(dd<30) return Math.max(2,Math.round(dd/7))+' 周前';
+    if(dd<365) return Math.max(1,Math.round(dd/30))+' 个月前';
+    return '去年';
+  }
+  function dayLabel(date,nowDate){
+    if(date==='unknown') return '更早';
+    if(date===nowDate) return '今天';
+    var dd=dayDiff(date,nowDate);
+    if(dd===1) return '昨天'; if(dd===2) return '前天';
+    if(dd>0&&dd<7) return dd+' 天前';
+    var p=date.split('-'); return Number(p[1])+' 月 '+Number(p[2])+' 日';
+  }
+
+  function esc(s){ return String(s==null?'':s); }
+  function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e;}
+
+  function tierOf(w){ return w>=0.75?'根深':w>=0.55?'稳固':w>=0.35?'成形':'萌芽'; }
+
+  function renderPrinciples(list){
+    var box=document.getElementById('principles');
+    box.textContent='';
+    if(!list.length){
+      var e=el('div','empty'); e.appendChild(el('b',null,'还没有主动形成的原则'));
+      e.appendChild(document.createTextNode('她读过、经历过的事，会在证据累积到一定程度后变成原则。现在还太早。'));
+      box.appendChild(e); return;
+    }
+    list.forEach(function(p){
+      var w=Math.max(0,Math.min(1,Number(p.weight)||0));
+      var item=el('div','p-item');
+      var head=el('div','p-head');
+      head.appendChild(el('span','p-tier',tierOf(w)));
+      head.appendChild(el('span','p-w',Math.round(w*100)+'%'));
+      item.appendChild(head);
+      var bar=el('div','bar'); var fill=el('i'); fill.style.width=Math.round(w*100)+'%'; bar.appendChild(fill); item.appendChild(bar);
+      var txt=el('div','p-text',esc(p.statement||p.text||''));
+      item.appendChild(txt);
+      var more=el('div','p-more','展开');
+      more.addEventListener('click',function(){
+        var on=txt.classList.toggle('open'); more.textContent=on?'收起':'展开';
+      });
+      item.appendChild(more);
+      box.appendChild(item);
+    });
+  }
+
+  function renderTimeline(groups,nowDate){
+    var box=document.getElementById('timeline');
+    box.textContent='';
+    if(!groups.length){
+      var e=el('div','empty'); e.appendChild(el('b',null,'还没有章节'));
+      e.appendChild(document.createTextNode('聊过、一起经历过事情之后，这里会按天排下来。'));
+      box.appendChild(e); return;
+    }
+    groups.forEach(function(g){
+      var day=el('div','day');
+      var h=el('div','day-h'); h.appendChild(el('span',null,dayLabel(g.date,nowDate)+' · '+g.items.length+' 条')); day.appendChild(h);
+      g.items.forEach(function(it){
+        var card=el('div','card');
+        var ch=el('div','card-h');
+        ch.appendChild(el('span','kind '+it.kind,it.kind==='chapter'?'章节':'手记'));
+        if(it.open) ch.appendChild(el('span','kind open','未完结'));
+        ch.appendChild(el('span','when',rel(it.at,Date.now(),TZ)));
+        card.appendChild(ch);
+        var body=el('div','body',esc(it.summary||''));
+        card.appendChild(body);
+        if(String(it.summary||'').length>90){
+          var more=el('div','p-more','展开');
+          more.addEventListener('click',function(){
+            var on=body.classList.toggle('open'); more.textContent=on?'收起':'展开';
+          });
+          card.appendChild(more);
+        }
+        day.appendChild(card);
+      });
+      box.appendChild(day);
+    });
+  }
+
+  function setHeader(h){
+    document.getElementById('s1').innerHTML='认识 <b>'+esc(h.knownFor||'—')+'</b>';
+    document.getElementById('s2').innerHTML='原则 <b>'+h.principleCount+'</b> 条（稳固以上 <b>'+h.activeCount+'</b>）';
+    document.getElementById('s3').innerHTML='未完结 <b>'+h.openChapters+'</b>';
+  }
+
+  // ── 数据 ──
+  function demoData(){
+    var now=Date.now();
+    return {
+      principles:[
+        {id:'p1',statement:'答应过的事要记住，哪怕对方没再提。',weight:0.82,status:'active'},
+        {id:'p2',statement:'不替别人转述他没说过的话。',weight:0.61,status:'active'},
+        {id:'p3',statement:'深夜不适合追问，先陪着。',weight:0.28,status:'candidate'}
+      ],
+      chapters:[
+        {id:'c1',at:now-3600e3,kind:'shared_event',status:'open',summary:'她说最近总加班，回来只想躺着。我记下了她周三最累。'}
+      ],
+      diaries:[
+        {id:'d1',at:now-26*3600e3,content:'今天他说话很少，我没有多问。后来他说了一句「有你在挺好」。我把这句话记住了，但没写进档案。'}
+      ],
+      peer:{displayName:'朋友',firstSeenAt:now-95*864e5}
+    };
+  }
+
+  function load(){
+    var url=API+'/hello-world/api/growth?peer='+encodeURIComponent(PEER);
+    var p = DEMO ? Promise.resolve(demoData()) : fetch(url,{credentials:'same-origin'}).then(function(r){
+      if(!r.ok) throw new Error('HTTP '+r.status); return r.json();
+    }).then(function(d){
+      return {
+        principles:d.principles||[],
+        chapters:d.chapters||d.openChapters||[],
+        diaries:d.diaries||[],
+        peer:d.peer||{}
+      };
+    });
+    p.then(function(d){
+      var nowDate=zoned(TZ,Date.now()).date;
+      var list=(d.principles||[]).map(function(x){
+        var w=Math.max(0,Math.min(1,Number(x.weight)||0));
+        return {statement:x.statement||x.text,weight:w,status:x.status};
+      }).sort(function(a,b){return b.weight-a.weight;});
+      var groups={};
+      (d.chapters||[]).forEach(function(c){var t=Number(c.at);if(!isFinite(t))return;
+        var k=zoned(TZ,t).date;(groups[k]=groups[k]||[]).push({at:t,kind:'chapter',summary:c.summary,open:c.status==='open'});});
+      (d.diaries||[]).forEach(function(x){var t=Number(x.at);if(!isFinite(t))return;
+        var k=zoned(TZ,t).date;(groups[k]=groups[k]||[]).push({at:t,kind:'diary',summary:x.content});});
+      var arr=Object.keys(groups).sort(function(a,b){return a<b?1:-1;}).map(function(k){
+        groups[k].sort(function(a,b){return b.at-a.at;});
+        return {date:k,items:groups[k]};
+      });
+      setHeader({
+        knownFor: d.peer&&d.peer.firstSeenAt?rel(d.peer.firstSeenAt,Date.now(),TZ):'',
+        principleCount:list.length,
+        activeCount:list.filter(function(x){return (Number(x.weight)||0)>=0.55;}).length,
+        openChapters:(d.chapters||[]).filter(function(c){return c.status==='open';}).length
+      });
+      renderPrinciples(list);
+      renderTimeline(arr,nowDate);
+    }).catch(function(err){
+      document.getElementById('principles').textContent='加载失败：'+err.message;
+    });
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>

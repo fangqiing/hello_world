@@ -1,0 +1,5 @@
+3d-force-graph v1.80.2
+https://github.com/vasturiano/3d-force-graph
+License: MIT
+Downloaded from https://unpkg.com/3d-force-graph/dist/3d-force-graph.min.js
+Bundle includes three.js (MIT). Served locally to avoid CDN dependency.

@@ -1,0 +1,42 @@
+{
+  "name": "hello_world",
+  "version": "1.0.0",
+  "private": false,
+  "type": "module",
+  "description": "A long-lived AI companion bundle for DeepSeek Harness: identity, memory, affect, channels, media and a 3D memory constellation.",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "lib",
+    "plugins/**/*.js",
+    "plugins/**/package.json",
+    "locale",
+    "icon.svg",
+    "client/*.html",
+    "client/vendor",
+    "skills",
+    "config/providers.example.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  },
+  "license": "MIT"
+}

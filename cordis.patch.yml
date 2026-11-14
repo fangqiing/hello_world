@@ -1,0 +1,57 @@
+# hello_world — split bundle. Main entry keeps identity / memory / dialogue;
+# the five siblings attach their own section or route through the helloWorld service.
+- insert:
+    - id: hello_world
+      name: dsh-hello_world
+      disabled: true
+      config:
+        companionName: 助手
+        partnerName: ''
+        worldId: default
+        worldName: 你的世界
+        timeZone: Asia/Shanghai
+        scope: all
+        life: true
+        reviewTime: '23:00'
+        quietHours: ['23:30', '08:00']
+        recallTopK: 8
+        workingMemoryTokens: 320
+        dailyTokenBudget: 0
+        qq:
+          enabled: false
+          mode: forward
+          wsUrl: ws://127.0.0.1:3001
+          accessToken: ''
+          allowUsers: []
+          allowGroups: []
+        wechat:
+          enabled: false
+          mode: native
+          apiBase: http://127.0.0.1:6174
+          apiToken: ''
+          accountId: ''
+          allowUsers: []
+          allowGroups: []
+    - id: hello_world-social
+      name: ./plugins/social/entry.js
+      disabled: true
+    - id: hello_world-growth
+      name: ./plugins/growth/entry.js
+      disabled: true
+    - id: hello_world-channels
+      name: ./plugins/channels/entry.js
+      disabled: true
+    - id: hello_world-console
+      name: ./plugins/console/entry.js
+      disabled: true
+    - id: hello_world-discovery
+      name: ./plugins/discovery/entry.js
+      disabled: true
+
+# Shared harness rows: keep the existing shipped engines on.
+- id: tool-result-pruner
+  disabled: false
+- id: compaction-basic
+  disabled: false
+- id: command-compact
+  disabled: false

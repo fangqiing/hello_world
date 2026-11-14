@@ -1,0 +1,31 @@
+# dependencies
+node_modules/
+package-lock.json
+pnpm-lock.yaml
+
+# secrets — never commit real credentials
+config/providers.json
+*.api-token
+.api-token
+
+# runtime state created on first boot
+persona.md
+self.md
+world-prompt.md
+diary/
+.history/
+memory.db
+memory.db-wal
+memory.db-shm
+channel-sessions.json
+state.json
+audit.log
+
+# local scratch
+_reset-*
+.step*-snapshot
+*.bak-*
+*.log
+tmp/
+.DS_Store
+Thumbs.db

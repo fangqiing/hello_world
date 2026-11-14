@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>识海 · 记忆星图</title>
+<style>
+  :root{
+    --bg:#05070d; --panel:rgba(10,18,34,.78); --line:rgba(120,170,255,.22);
+    --fg:#dce8ff; --muted:#7f93b8; --accent:#9fc4ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  #app{display:flex;flex-direction:column;height:100%}
+  header{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,rgba(16,28,52,.9),rgba(5,7,13,.2))}
+  header h1{font-size:15px;margin:0;letter-spacing:.14em;font-weight:600}
+  header .grow{flex:1}
+  input[type=search]{width:220px;background:rgba(8,14,26,.9);border:1px solid var(--line);color:var(--fg);
+    border-radius:8px;padding:6px 10px;font-size:12px;outline:none}
+  input[type=search]:focus{border-color:rgba(140,190,255,.55)}
+  button{background:rgba(16,28,52,.85);border:1px solid var(--line);color:var(--fg);border-radius:8px;
+    padding:6px 10px;font-size:12px;cursor:pointer}
+  button:hover{border-color:rgba(140,190,255,.5)}
+  button.on{background:rgba(60,110,200,.35);border-color:rgba(140,190,255,.65)}
+  #stage{position:relative;flex:1;min-height:0}
+  #graph{position:absolute;inset:0}
+  #legend{position:absolute;left:14px;bottom:14px;background:var(--panel);border:1px solid var(--line);
+    border-radius:12px;padding:10px 12px;backdrop-filter:blur(8px);max-width:190px}
+  #legend h3{margin:0 0 8px;font-size:11px;color:var(--muted);letter-spacing:.1em;font-weight:500}
+  .lg{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--fg);margin:3px 0}
+  .lg i{width:8px;height:8px;border-radius:50%;display:block;box-shadow:0 0 8px currentColor}
+  #status{position:absolute;right:14px;bottom:14px;font-size:11px;color:var(--muted);text-align:right;line-height:1.6}
+  #aside{position:absolute;right:14px;top:14px;width:min(340px,42vw);max-height:calc(100% - 28px);overflow:auto;
+    background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;backdrop-filter:blur(10px);
+    transform:translateX(120%);transition:transform .28s ease;font-size:12px;line-height:1.7}
+  #aside.show{transform:none}
+  #aside h2{margin:0 0 10px;font-size:13px;color:var(--accent);letter-spacing:.08em}
+  #aside .kv{display:flex;gap:8px;margin:6px 0;border-bottom:1px dashed rgba(120,170,255,.12);padding-bottom:6px}
+  #aside .kv b{color:var(--muted);font-weight:500;min-width:54px;flex:none}
+  #aside .kv span{word-break:break-all}
+  #close{position:absolute;right:10px;top:8px;background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer}
+  #tip{position:absolute;left:50%;top:12px;transform:translateX(-50%);font-size:11px;color:var(--muted);
+    background:rgba(8,14,26,.7);border:1px solid var(--line);border-radius:20px;padding:5px 14px;white-space:nowrap}
+  #err{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;color:#ff9e7d;font-size:13px;display:none}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>识海</h1>
+    <span class="grow"></span>
+    <input id="q" type="search" placeholder="搜一段记忆…">
+    <button id="spin" type="button" class="on">自动旋转</button>
+    <button id="fit" type="button">归位</button>
+    <button id="full" type="button">全屏</button>
+    <span id="count" style="color:var(--muted);font-size:11px"></span>
+  </header>
+  <div id="stage">
+    <div id="graph"></div>
+    <div id="tip">拖拽旋转 · 滚轮缩放 · 点击星星看详情</div>
+    <div id="legend"><h3>记忆层</h3><div id="layers"></div></div>
+    <div id="status"></div>
+    <aside id="aside"></aside>
+    <div id="err"></div>
+  </div>
+</div>
+<script src="/hello-world/constellation/vendor/3d-force-graph.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  var CFG = window.HELLO_WORLD_CONFIG || {};
+  var API = String(CFG.apiBase || '').replace(/\/$/, '');
+  var PEER = String(CFG.peer || '');
+  var $ = function (id) { return document.getElementById(id); };
+
+  var COLORS = {
+    soul: '#ffe9b8', core: '#ffe9b8', self: '#ffe9b8', user: '#ffb3c8', fact: '#9fc4ff',
+    project: '#ffd48f', preference: '#8fe3c0', skill: '#8fd8ff', topic: '#c3a6ff',
+    lesson: '#ff9e7d', episode: '#9aa7bd', rule: '#b8d97a'
+  };
+  function colorOf(l) { return COLORS[String(l || '').toLowerCase()] || '#9fc4ff'; }
+  function labelOf(l) {
+    return ({ soul: '魂', core: '魂', self: '魂', user: '对方', fact: '事实', project: '项目',
+      preference: '偏好', skill: '技能', topic: '话题', lesson: '教训', episode: '经历', rule: '规则' })[String(l || '').toLowerCase()] || l;
+  }
+
+  if (typeof ForceGraph3D !== 'function') {
+    var e = $('err');
+    e.style.display = 'block';
+    e.textContent = '3D 渲染库没加载成功，检查 /hello-world/constellation/vendor/3d-force-graph.min.js';
+    return;
+  }
+
+  var graphData = { nodes: [], links: [] };
+  var byId = new Map();
+  var Graph = null;
+
+  function toGraph(items) {
+    var nodes = items.map(function (n) {
+      var imp = Number(n.importance) > 0 ? Number(n.importance) : 5;
+      return {
+        id: String(n.id),
+        name: String(n.content || '').slice(0, 60),
+        layer: String(n.layer || 'fact'),
+        importance: imp,
+        val: 1.2 + (imp / 10) * 7,
+        color: colorOf(n.layer),
+        createdAt: Number(n.createdAt) || 0
+      };
+    });
+    byId = new Map(nodes.map(function (n) { return [n.id, n]; }));
+    var links = [], seen = new Set();
+    items.forEach(function (n) {
+      (n.links || []).forEach(function (t) {
+        var a = String(n.id), b = String(t);
+        if (!byId.has(b) || a === b) return;
+        var k = a < b ? a + '|' + b : b + '|' + a;
+        if (seen.has(k)) return;
+        seen.add(k);
+        links.push({ source: a, target: b, kind: 'link', color: 'rgba(160,210,255,0.30)' });
+      });
+    });
+    // 语义边：关键词共现，让没有显式 links 的记忆也连起来
+    var kw = new Map();
+    items.forEach(function (n) {
+      var s = new Set(String(n.keywords || '').split(/\s+/).filter(Boolean));
+      if (s.size) kw.set(String(n.id), s);
+    });
+    var sem = 0;
+    for (var i = 0; i < nodes.length && sem < 900; i++) {
+      var A = kw.get(nodes[i].id); if (!A) continue;
+      var added = 0;
+      for (var j = i + 1; j < nodes.length && added < 3; j++) {
+        var B = kw.get(nodes[j].id); if (!B) continue;
+        var inter = 0;
+        A.forEach(function (x) { if (B.has(x)) inter++; });
+        if (inter < 2) continue;
+        if (inter / Math.sqrt(A.size * B.size) < 0.34) continue;
+        var key = nodes[i].id < nodes[j].id ? nodes[i].id + '|' + nodes[j].id : nodes[j].id + '|' + nodes[i].id;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        links.push({ source: nodes[i].id, target: nodes[j].id, kind: 'sem', color: 'rgba(120,165,235,0.10)' });
+        added++; sem++;
+      }
+    }
+    return { nodes: nodes, links: links };
+  }
+
+  function buildLegend() {
+    var box = $('layers'); box.textContent = '';
+    var ls = [];
+    graphData.nodes.forEach(function (n) { if (ls.indexOf(n.layer) < 0) ls.push(n.layer); });
+    ls.sort().forEach(function (l) {
+      var d = document.createElement('div'); d.className = 'lg';
+      var i = document.createElement('i');
+      i.style.background = colorOf(l); i.style.color = colorOf(l);
+      var s = document.createElement('span'); s.textContent = labelOf(l);
+      d.appendChild(i); d.appendChild(s); box.appendChild(d);
+    });
+  }
+
+  function focus(node) {
+    var r = Math.hypot(node.x || 0, node.y || 0, node.z || 0) || 1;
+    var ratio = 1 + 160 / r;
+    Graph.cameraPosition({ x: node.x * ratio, y: node.y * ratio, z: node.z * ratio }, node, 1200);
+  }
+
+  function showDetail(node) {
+    var a = $('aside'); a.className = 'show'; a.textContent = '';
+    var btn = document.createElement('button'); btn.id = 'close'; btn.textContent = '×';
+    btn.onclick = function () { a.className = ''; };
+    a.appendChild(btn);
+    var h = document.createElement('h2'); h.textContent = '这段记忆'; a.appendChild(h);
+    function kv(k, v) {
+      var d = document.createElement('div'); d.className = 'kv';
+      var b = document.createElement('b'); b.textContent = k;
+      var s = document.createElement('span'); s.textContent = v == null ? '-' : String(v);
+      d.appendChild(b); d.appendChild(s); a.appendChild(d);
+    }
+    kv('层', labelOf(node.layer));
+    kv('内容', node.name);
+    kv('重要度', node.importance);
+    kv('时间', node.createdAt ? new Date(node.createdAt).toLocaleString('zh-CN') : '—');
+  }
+
+  function boot() {
+    var url = API + '/api/memories?limit=2000&lean=1';
+    if (PEER) url += '&peer=' + encodeURIComponent(PEER);
+    fetch(url, { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (d) {
+        var items = Array.isArray(d) ? d : (d.items || d.memories || d.nodes || []);
+        if (!items.length) throw new Error('没有拿到记忆');
+        graphData = toGraph(items);
+        Graph.graphData(graphData);
+        buildLegend();
+        $('count').textContent = graphData.nodes.length + ' 段记忆 · ' + graphData.links.length + ' 条牵连';
+        $('status').textContent = 'WebGL · ' + graphData.nodes.length + ' 节点';
+      })
+      .catch(function (err) {
+        var e = $('err');
+        e.style.display = 'block';
+        e.textContent = '加载失败：' + (err && err.message || err) + '（可加 ?demo=1 看演示）';
+      });
+  }
+
+  Graph = ForceGraph3D()
+    (document.getElementById('graph'))
+    .backgroundColor('#05070d')
+    .nodeId('id')
+    .nodeVal('val')
+    .nodeColor('color')
+    .nodeLabel('name')
+    .nodeOpacity(0.92)
+    .nodeResolution(12)
+    .linkSource('source')
+    .linkTarget('target')
+    .linkColor('color')
+    .linkWidth(function (l) { return l.kind === 'sem' ? 0.22 : 0.65; })
+    .linkOpacity(0.55)
+    .onNodeClick(function (node) { focus(node); showDetail(node); })
+    .onBackgroundClick(function () { $('aside').className = ''; });
+
+  Graph.controls().autoRotate = true;
+  Graph.controls().autoRotateSpeed = 0.75;
+  Graph.d3AlphaDecay(0.022);
+  Graph.d3VelocityDecay(0.32);
+
+  $('spin').onclick = function () {
+    var c = Graph.controls();
+    c.autoRotate = !c.autoRotate;
+    this.className = c.autoRotate ? 'on' : '';
+  };
+  $('fit').onclick = function () { Graph.zoomToFit(800, 60); };
+  $('full').onclick = function () {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+    else document.exitFullscreen();
+  };
+  $('q').addEventListener('input', function (e) {
+    var q = String(e.target.value || '').trim().toLowerCase();
+    if (!q) { Graph.nodeColor(function (n) { return n.color; }); return; }
+    Graph.nodeColor(function (n) {
+      return String(n.name).toLowerCase().indexOf(q) >= 0 ? '#ffffff' : n.color;
+    });
+  });
+  window.addEventListener('resize', function () { Graph.width(window.innerWidth).height(window.innerHeight - 52); });
+  Graph.width(window.innerWidth).height(window.innerHeight - 52);
+
+  // ── 光晕层：2D overlay，把每颗星投影到屏幕后叠一层加法混合的柔光 ──
+  // 不走 THREE.Sprite：3d-force-graph@1.80 要 three>=0.179，而 three 已无 UMD，外部再引一份会实例冲突。
+  var fx = document.createElement('canvas');
+  fx.style.cssText = 'position:absolute;inset:0;pointer-events:none;mix-blend-mode:screen;z-index:1';
+  $('stage').appendChild(fx);
+  var fxc = fx.getContext('2d');
+  var glowCache = new Map();
+  function rgba(hex, a) {
+    var h = String(hex || '#9fc4ff').replace('#', '');
+    if (h.length === 3) h = h.split('').map(function (c) { return c + c; }).join('');
+    var n = parseInt(h, 16);
+    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+  }
+  function glowSprite(color) {
+    if (glowCache.has(color)) return glowCache.get(color);
+    var S = 96, c = document.createElement('canvas');
+    c.width = c.height = S;
+    var g = c.getContext('2d');
+    var grd = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+    grd.addColorStop(0, 'rgba(255,255,255,0.95)');
+    grd.addColorStop(0.14, rgba(color, 0.8));
+    grd.addColorStop(0.4, rgba(color, 0.24));
+    grd.addColorStop(1, rgba(color, 0));
+    g.fillStyle = grd;
+    g.fillRect(0, 0, S, S);
+    glowCache.set(color, c);
+    return c;
+  }
+  var fxW = 1, fxH = 1, dpr = window.devicePixelRatio || 1;
+  function resizeFx() {
+    var r = $('graph').getBoundingClientRect();
+    fxW = Math.max(1, Math.floor(r.width));
+    fxH = Math.max(1, Math.floor(r.height));
+    fx.width = Math.floor(fxW * dpr);
+    fx.height = Math.floor(fxH * dpr);
+    fx.style.width = fxW + 'px';
+    fx.style.height = fxH + 'px';
+    fxc.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  var lastGlow = 0;
+  function paintGlow(ts) {
+    requestAnimationFrame(paintGlow);
+    if (ts - lastGlow < 33) return;
+    lastGlow = ts;
+    if (!graphData.nodes.length) return;
+    fxc.clearRect(0, 0, fxW, fxH);
+    fxc.globalCompositeOperation = 'lighter';
+    for (var i = 0; i < graphData.nodes.length; i++) {
+      var n = graphData.nodes[i];
+      if (n.x == null || !isFinite(n.x)) continue;
+      var p;
+      try { p = Graph.graph2ScreenCoords(n.x, n.y, n.z); } catch (err) { continue; }
+      if (!p || p.x < -100 || p.y < -100 || p.x > fxW + 100 || p.y > fxH + 100) continue;
+      var size = (16 + n.importance * 3) * 2.6;
+      fxc.globalAlpha = 0.5;
+      fxc.drawImage(glowSprite(n.color), p.x - size / 2, p.y - size / 2, size, size);
+    }
+    fxc.globalAlpha = 1;
+  }
+  resizeFx();
+  window.addEventListener('resize', resizeFx);
+  requestAnimationFrame(paintGlow);
+
+  boot();
+})();
+</script>
+</body>
+</html>

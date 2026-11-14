@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>她对每个人</title>
+<style>
+  :root{--bg:#05070d;--panel:#0b1018;--card:#0e1520;--line:#1b2433;--text:#dbe4f3;--muted:#7d8aa3;--accent:#7fa6ff;--warm:#ffd48f;--err:#ffb3c8}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font:13px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+  #app{display:flex;flex-direction:column;height:100%}
+  header{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:14px}
+  header h1{font-size:14px;margin:0;letter-spacing:.08em;color:#cfe0ff;font-weight:600}
+  .stat{color:var(--muted);font-size:12px}
+  main{flex:1;display:flex;min-height:0}
+  #left{width:250px;border-right:1px solid var(--line);background:var(--panel);overflow:auto;padding:14px}
+  #mid{flex:1;padding:16px 20px;overflow:auto}
+  #right{width:300px;border-left:1px solid var(--line);background:var(--panel);padding:14px;overflow:auto}
+  h2{font-size:11px;color:var(--muted);letter-spacing:.1em;margin:0 0 12px;font-weight:600}
+  .peer{padding:9px 11px;border:1px solid var(--line);border-radius:8px;margin-bottom:7px;cursor:pointer}
+  .peer:hover,.peer.on{border-color:var(--accent);background:rgba(127,166,255,.07)}
+  .peer b{display:block;font-size:12px;font-weight:600}
+  .peer span{font-size:11px;color:var(--muted)}
+  .dim{margin:0 0 11px}
+  .dim-h{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:4px}
+  .bar{height:5px;background:#151d2a;border-radius:3px;overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:3px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:12px;margin-bottom:10px}
+  button{font:inherit;color:var(--text);background:#0e1520;border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer;margin:3px 4px 3px 0}
+  button:hover{border-color:var(--accent);color:var(--accent)}
+  button.on{background:rgba(127,166,255,.16);border-color:rgba(127,166,255,.4);color:#bcd2ff}
+  .log{font-size:11px;color:var(--muted);border-bottom:1px solid var(--line);padding:6px 0}
+  .log b{color:#c6d2e6;font-weight:500}
+  .empty{color:var(--muted);text-align:center;padding:50px 16px;line-height:2}
+  #hint{font-size:11px;color:var(--muted);margin-top:14px}
+</style>
+</head>
+<body>
+<div id="app">
+  <header><h1>她对每个人</h1><span class="stat" id="s"></span></header>
+  <main>
+    <section id="left"><h2>认识的人</h2><div id="peers"></div></section>
+    <section id="mid"><h2>态度</h2><div id="dims"></div><div id="hint">数值只在这里看；进 prompt 的只有一句形容词。</div></section>
+    <section id="right"><h2>她的选择</h2><div id="ctrl"></div><h2 style="margin-top:18px">沉默记录</h2><div id="logs"></div></section>
+  </main>
+</div>
+<script>
+(function(){
+'use strict';
+var CFG=window.HELLO_WORLD_CONFIG||{},API=String(CFG.apiBase||'').replace(/\/$/,'');
+var DEMO=/(\?|&)demo=1/.test(location.search)||!('apiBase' in CFG);
+var $=function(id){return document.getElementById(id);};
+var DIMS=[['warmth','亲近'],['trust','信任'],['interest','想聊'],['irritation','烦躁'],['avoidance','回避'],['formality','拘谨']];
+var COLORS={warmth:'#ffd48f',trust:'#8fe3c0',interest:'#9fc4ff',irritation:'#ffb3c8',avoidance:'#c3a6ff',formality:'#8fd8ff'};
+var data={attitudes:[],silences:[]},current=null;
+
+function demo(){
+  return {attitudes:[
+    {peerId:'wechat:private:wxid_example',displayName:'朋友',dims:{warmth:.82,trust:.76,interest:.71,irritation:.12,avoidance:.08,formality:.2},affinity:.78,events:34,updatedAt:Date.now()},
+    {peerId:'wechat:private:other',displayName:'另一个人',dims:{warmth:.24,trust:.4,interest:.31,irritation:.63,avoidance:.41,formality:.55},affinity:.21,events:9,updatedAt:Date.now()-864e5}
+  ],silences:[
+    {at:Date.now()-3600e3,peerId:'wechat:private:other',reason:'他只回了个语气词；这会儿有点烦他',visible:true},
+    {at:Date.now()-7200e3,peerId:'wechat:private:other',reason:'就是这会儿不想说话',visible:true}
+  ]};
+}
+function load(){
+  if(DEMO){data=demo();render();return;}
+  Promise.all([
+    fetch(API+'/hello-world/api/attitudes',{credentials:'same-origin'}).then(function(r){return r.json();}),
+    fetch(API+'/hello-world/api/attitudes/silences',{credentials:'same-origin'}).then(function(r){return r.json();})
+  ]).then(function(a){data={attitudes:a[0].items||a[0].attitudes||[],silences:a[1].items||a[1].silences||[]};render();})
+    .catch(function(e){$('s').textContent='加载失败：'+e.message;});
+}
+function render(){
+  $('s').textContent=data.attitudes.length+' 个人 · '+data.silences.length+' 条沉默记录';
+  var box=$('peers');box.textContent='';
+  data.attitudes.forEach(function(a){
+    var d=document.createElement('div');d.className='peer'+(current===a.peerId?' on':'');
+    var b=document.createElement('b');b.textContent=a.displayName||a.peerId;
+    var s=document.createElement('span');s.textContent='亲近度 '+(a.affinity!=null?a.affinity.toFixed(2):'—')+' · '+a.events+' 次互动';
+    d.appendChild(b);d.appendChild(s);
+    d.onclick=function(){current=a.peerId;render();};
+    box.appendChild(d);
+  });
+  if(!current&&data.attitudes.length)current=data.attitudes[0].peerId;
+  var a=data.attitudes.find(function(x){return x.peerId===current;});
+  var dm=$('dims');dm.textContent='';
+  if(!a){dm.innerHTML='<div class="empty">还没有认识的人</div>';$('ctrl').textContent='';$('logs').textContent='';return;}
+  DIMS.forEach(function(p){
+    var k=p[0],label=p[1],v=a.dims[k]||0;
+    var w=document.createElement('div');w.className='dim';
+    var h=document.createElement('div');h.className='dim-h';
+    var l=document.createElement('span');l.textContent=label;
+    var r=document.createElement('span');r.textContent=v.toFixed(2);
+    h.appendChild(l);h.appendChild(r);w.appendChild(h);
+    var bar=document.createElement('div');bar.className='bar';
+    var i=document.createElement('i');i.style.width=Math.round(v*100)+'%';i.style.background=COLORS[k];
+    bar.appendChild(i);w.appendChild(bar);dm.appendChild(w);
+  });
+  var c=$('ctrl');c.textContent='';
+  var card=document.createElement('div');card.className='card';
+  card.innerHTML='<b style="font-size:12px">用户覆盖</b><div style="font-size:11px;color:var(--muted);margin:6px 0 10px">强制回 / 强制不回 / 交还给她自己</div>';
+  [['reply','强制回'],['silent','强制不回'],[null,'取消覆盖']].forEach(function(x){
+    var b=document.createElement('button');b.textContent=x[1];
+    b.onclick=function(){override(a.peerId,x[0]);};card.appendChild(b);
+  });
+  var rb=document.createElement('button');rb.textContent='回滚上一条态度';
+  rb.onclick=function(){rollback(a.peerId);};card.appendChild(rb);
+  c.appendChild(card);
+  var lg=$('logs');lg.textContent='';
+  var mine=data.silences.filter(function(s){return s.peerId===a.peerId;});
+  if(!mine.length){lg.innerHTML='<div class="log">没有沉默记录</div>';return;}
+  mine.forEach(function(s){
+    var d=document.createElement('div');d.className='log';
+    var t=new Date(Number(s.at)).toLocaleString('zh-CN');
+    d.innerHTML='<b>'+t+'</b><br>'+String(s.reason||'');lg.appendChild(d);
+  });
+}
+function override(peerId,decision){
+  if(DEMO){alert('demo 模式：'+peerId+' → '+(decision||'取消覆盖'));return;}
+  fetch(API+'/hello-world/api/attitude/override',{method:'POST',credentials:'same-origin',
+    headers:{'content-type':'application/json'},body:JSON.stringify({peerId:peerId,decision:decision})})
+    .then(load).catch(function(e){alert('失败：'+e.message);});
+}
+function rollback(peerId){
+  if(DEMO){alert('demo 模式：回滚 '+peerId);return;}
+  fetch(API+'/hello-world/api/attitude/rollback',{method:'POST',credentials:'same-origin',
+    headers:{'content-type':'application/json'},body:JSON.stringify({peerId:peerId})})
+    .then(load).catch(function(e){alert('失败：'+e.message);});
+}
+load();
+})();
+</script>
+</body>
+</html>

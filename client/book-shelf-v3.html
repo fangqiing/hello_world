@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>书架 · 投喂</title>
+<style>
+  :root{--bg:#05070d;--panel:#0b1018;--card:#0e1520;--line:#1b2433;--text:#dbe4f3;--muted:#7d8aa3;
+        --accent:#7fa6ff;--warm:#ffd48f;--ok:#8fe3c0;--left-w:380px}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font:14px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+  #app{display:flex;flex-direction:column;height:100%}
+  header{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  header h1{font-size:15px;margin:0;letter-spacing:.06em;color:#cfe0ff;font-weight:600}
+  .stat{color:var(--muted);font-size:13px}.stat b{color:var(--text)}
+  main{flex:1;display:flex;min-height:0}
+  #left{width:var(--left-w);border-right:1px solid var(--line);background:var(--panel);padding:16px;overflow:auto}
+  #right{flex:1;padding:16px 20px;overflow:auto}
+  h2{font-size:12px;color:var(--muted);letter-spacing:.1em;margin:0 0 12px;font-weight:600}
+  #drop{border:1px dashed var(--line);border-radius:10px;padding:24px 16px;text-align:center;
+    color:var(--muted);cursor:pointer;transition:.15s}
+  #drop:hover,#drop.over{border-color:var(--accent);color:var(--accent);background:rgba(127,166,255,.04)}
+  #drop b{display:block;color:#c6d2e6;margin-bottom:4px}
+  textarea{width:100%;height:170px;margin-top:10px;background:#0a1017;color:var(--text);
+    border:1px solid var(--line);border-radius:8px;padding:10px;font:13px/1.6 inherit;resize:vertical}
+  .row{display:flex;gap:8px;margin-top:10px}
+  input[type=text]{flex:1;background:#0a1017;color:var(--text);border:1px solid var(--line);
+    border-radius:6px;padding:6px 9px;font:inherit}
+  button{font:inherit;color:var(--text);background:#0e1520;border:1px solid var(--line);
+    border-radius:6px;padding:6px 12px;cursor:pointer}
+  button:hover{border-color:var(--accent);color:var(--accent)}
+  button.primary{background:rgba(127,166,255,.14);border-color:rgba(127,166,255,.35);color:#bcd2ff}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .meta{margin-top:12px;font-size:12px;color:var(--muted);line-height:1.9}
+  .meta b{color:#c6d2e6}
+  .warn{color:var(--warm)}
+  .book{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:12px 14px;margin-bottom:9px;cursor:context-menu}
+  .book:hover{border-color:#2b3c56}
+  .book-h{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+  .book-t{font-size:14px;color:#cfe0ff}
+  .when{margin-left:auto;font-size:11px;color:var(--muted)}
+  .book-m{font-size:12px;color:var(--muted)}
+  .ctx{position:fixed;z-index:30;min-width:158px;padding:5px;background:#111a28;border:1px solid #2b3c56;
+    border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.45)}
+  .ctx[hidden]{display:none}
+  .ctx button{display:block;width:100%;text-align:left;border:0;background:none;border-radius:5px;padding:7px 10px;color:#ffb0b0}
+  .ctx button:hover{background:rgba(255,120,120,.1);color:#ffd0d0}
+  .empty{color:var(--muted);text-align:center;padding:50px 20px;line-height:2}
+  .empty b{display:block;color:#c6d2e6;margin-bottom:6px}
+  #log{font-size:12px;color:var(--muted);margin-top:10px;white-space:pre-wrap;max-height:150px;overflow:auto}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>书架</h1>
+    <span class="stat" id="s1"></span>
+    <span class="stat" id="s2"></span>
+  </header>
+  <main>
+    <section id="left">
+      <h2>投喂一本书</h2>
+      <div id="drop">
+        <b>拖一个 .txt / .md 进来</b>
+        或者点这里选文件 · 也可以直接粘贴正文
+        <input id="file" type="file" accept=".txt,.md,.markdown,text/plain" hidden>
+      </div>
+      <div class="row"><input id="title" type="text" placeholder="书名（留空自动判断）"></div>
+      <textarea id="text" placeholder="把整本书粘进来。按「第一章」「Chapter 1」等标记切章，整本一次提交；短文不切分。"></textarea>
+      <div class="row">
+        <button id="go" class="primary" disabled>开始读</button>
+        <button id="clear">清空</button>
+      </div>
+      <div class="meta" id="meta"></div>
+      <div id="log"></div>
+    </section>
+    <section id="right">
+      <h2>读过的书</h2>
+      <div id="books"></div>
+      <div id="ctx" class="ctx" hidden><button id="ctx-del">删除这本书</button></div>
+    </section>
+  </main>
+</div>
+<script>
+(function(){
+  'use strict';
+  var CFG = window.HELLO_WORLD_CONFIG || {};
+  var API = String(CFG.apiBase || '').replace(/\/$/, '');
+  var DEMO = /(\?|&)demo=1/.test(location.search);
+  var MAX_CHARS = 1000000, ARTICLE_MAX = 12000, MIN_CHAPTER = 200;
+  var DRAFT_KEY = 'whale.book.draft.v3';
+
+  var $ = function(id){ return document.getElementById(id); };
+  var state = { timer:null, busy:false };
+
+  // 章节头：只认行首且该行是短标题行
+  var HEAD = /^\s*(第[一二三四五六七八九十百千零〇两\d]{1,8}[章节卷回篇部]|Chapter\s+\d{1,4}\b|CHAPTER\s+[IVXLCDM]{1,6}\b|[一二三四五六七八九十]{1,3}[、.]\s*\S)/i;
+  var NUM_HEAD = /^\d{1,3}[.)]\s+\S/;
+  function isHead(line, prev, next){
+    var s = String(line||'').trim();
+    if(!s) return false;
+    if(NUM_HEAD.test(s)){
+      if(s.length > 120) return false;
+      if(prev !== undefined && next !== undefined) return !String(prev).trim() && !String(next).trim();
+      return true;
+    }
+    if(s.length > 40) return false;
+    return HEAD.test(s);
+  }
+
+  function normTitle(v){
+    return String(v||'').replace(/\s+/g,' ').trim().toLowerCase();
+  }
+  function findToc(lines){
+    var start=-1;
+    for(var i=0;i<lines.length;i++){ if(/^contents$/i.test(String(lines[i]||'').trim())){ start=i; break; } }
+    if(start<0) return null;
+    var entries=[], end=start;
+    for(var j=start+1;j<lines.length;j++){
+      var line=String(lines[j]||'').trim();
+      if(!line) continue;
+      var m=line.match(/^(\d{1,3})[.)]\s+(.+)$/);
+      if(m && line.length<=120){ entries.push({num:m[1],title:line,line:j}); end=j; continue; }
+      if(!entries.length) continue;
+      if(/^(acknowledgments|notes|index)$/i.test(line)) continue;
+      break;
+    }
+    return entries.length>=3 ? {entries:entries,end:end} : null;
+  }
+  function findAnchor(lines,entry,from){
+    var target=normTitle(entry.title), bare=target.replace(/^\d{1,3}[.)]\s*/,'');
+    for(var i=from;i<lines.length;i++){
+      var line=String(lines[i]||'').trim();
+      var m=line.match(/^(\d{1,3})[.)]\s+(.+)$/);
+      if(!m || m[1]!==entry.num){
+        if(bare.length>=12 && normTitle(line).indexOf(bare)===0) return i;
+        continue;
+      }
+      var cand=normTitle(line);
+      if(cand===target) return i;
+      var j=i+1; while(j<lines.length && !String(lines[j]||'').trim()) j++;
+      if(j<lines.length){
+        cand=normTitle(line+' '+lines[j]);
+        if(cand===target || cand.indexOf(target)===0) return i;
+      }
+      if(target.indexOf(cand)===0) return i;
+    }
+    return -1;
+  }
+
+  /** 只按章节标记切，不按字数硬切。 */
+  function splitByChapters(text){
+    var s = String(text||'').trim();
+    if(!s) return [];
+    var blocks = [], buf = [], title = '';
+    var lines = s.split('\n');
+    var toc=findToc(lines);
+    if(toc){
+      var anchors=[], cursor=toc.end+1;
+      for(var t=0;t<toc.entries.length;t++){
+        var at=findAnchor(lines,toc.entries[t],cursor);
+        if(at<0) continue;
+        anchors.push({entry:toc.entries[t],at:at}); cursor=at+1;
+      }
+      if(anchors.length>=2){
+        return anchors.map(function(a,idx){
+          var until=idx+1<anchors.length?anchors[idx+1].at:lines.length;
+          if(idx===anchors.length-1){
+            for(var q=a.at+1;q<until;q++){
+              if(/^(acknowledgments|notes|index|about the author)\b/i.test(String(lines[q]||'').trim())){ until=q; break; }
+            }
+          }
+          return {index:idx,title:a.entry.title.slice(0,80),text:lines.slice(a.at,until).join('\n').trim()};
+        });
+      }
+    }
+    for(var i=0;i<lines.length;i++){
+      var line = lines[i];
+      if(isHead(line, lines[i-1], lines[i+1])){
+        if(buf.length){ blocks.push({title:title, text:buf.join('\n').trim()}); buf=[]; }
+        title = line.trim().slice(0,40);
+      }
+      buf.push(line);
+    }
+    if(buf.length) blocks.push({title:title, text:buf.join('\n').trim()});
+    var merged=[];
+    for(var k=0;k<blocks.length;k++){
+      var b=blocks[k];
+      if(!b.text) continue;
+      if(merged.length && b.text.length < MIN_CHAPTER){ merged[merged.length-1].text += '\n'+b.text; continue; }
+      merged.push({title:b.title, text:b.text});
+    }
+    if(!merged.length) return [{index:0,title:'全文',text:s}];
+    return merged.map(function(b,i){ return {index:i,title:b.title||('第 '+(i+1)+' 部分'),text:b.text}; });
+  }
+
+  function guard(raw){
+    var s=String(raw||'');
+    if(s.length<=MAX_CHARS) return {text:s,truncated:false,dropped:0};
+    return {text:s.slice(0,MAX_CHARS),truncated:true,dropped:s.length-MAX_CHARS};
+  }
+
+  /** 一次请求的 payload：chapters 全带，不逐章 POST。 */
+  function payload(raw,title){
+    var g=guard(raw);
+    var ch=splitByChapters(g.text);
+    var short = ch.length<=1 && g.text.length<=ARTICLE_MAX;
+    return {
+      action:'read-book', title:String(title||'').trim()||'未命名', source:'book',
+      mode: short?'article':'book',
+      chapters: [],
+      text: g.text,
+      totalChars:g.text.length, chapterCount: short?0:ch.length,
+      truncated:g.truncated, dropped:g.dropped, rawChars:String(raw||'').length
+    };
+  }
+
+  function refresh(){
+    var p=payload($('text').value,$('title').value);
+    var html;
+    if(p.mode==='article'){
+      html='短文 <b>'+p.rawChars+'</b> 字 · <b>不切分</b>，整篇一次投喂';
+    }else{
+      html='共 <b>'+p.chapterCount+'</b> 章 · 全书 <b>'+p.rawChars+'</b> 字 · <b>整本一次投喂</b>';
+    }
+    if(p.truncated) html+='<br><span class="warn">原文 '+p.rawChars+' 字，超过 100 万，保留 '+p.totalChars+' 字（丢掉 '+p.dropped+' 字）</span>';
+    $('meta').innerHTML=html;
+    $('go').disabled=state.busy || p.totalChars<50;
+    saveDraft();
+  }
+
+  function saveDraft(){
+    try{ localStorage.setItem(DRAFT_KEY, JSON.stringify({text:$('text').value.slice(0,MAX_CHARS),title:$('title').value,at:Date.now()})); }catch(e){}
+  }
+  function loadDraft(){
+    try{
+      var raw=localStorage.getItem(DRAFT_KEY); if(!raw) return;
+      var d=JSON.parse(raw); if(!d||!d.text) return;
+      $('text').value=d.text; if(d.title) $('title').value=d.title;
+      $('log').textContent='已恢复上次未读完的内容（'+d.text.length+' 字）';
+    }catch(e){}
+  }
+
+  function setFile(f){
+    if(!f) return;
+    $('log').textContent='读取中…';
+    var r=new FileReader();
+    r.onload=function(){
+      $('text').value=String(r.result||'');
+      if(!$('title').value) $('title').value=f.name.replace(/\.(txt|md|markdown)$/i,'');
+      refresh(); $('log').textContent='已读入 '+$('text').value.length+' 字';
+    };
+    r.onerror=function(){ $('log').textContent='读取失败，换 UTF-8 编码再试'; };
+    r.readAsText(f,'utf-8');
+  }
+
+  function post(p){
+    if(DEMO) return new Promise(function(res){ setTimeout(function(){ res({ok:true,accepted:true,jobId:'demo'}); },400); });
+    return fetch(API+'/whale-chan/api/action',{
+      method:'POST',credentials:'same-origin',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify(p)
+    }).then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(body){
+        if(!r.ok){ throw new Error(body.error||('HTTP '+r.status)); }
+        return body;
+      });
+    });
+  }
+
+  function readJob(id){
+    return fetch(API+'/whale-chan/api/read-jobs/'+encodeURIComponent(id),{credentials:'same-origin'})
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); });
+  }
+
+  function watch(id,title){
+    if(DEMO){
+      $('log').textContent='《'+title+'》读完了。\n（demo 模式，没有真的提交）';
+      return Promise.resolve({status:'done',demo:true});
+    }
+    var tries=0;
+    return new Promise(function(resolve,reject){
+      function tick(){
+        tries++;
+        readJob(id).then(function(data){
+          var job=data.job||{};
+          $('log').textContent='《'+title+'》看书中…\n状态：'+job.status+' · '+(job.progress==null?'':job.progress+'%')
+            +'\n第 '+(job.doneChapters||0)+'/'+(job.chapters||0)+' 章';
+          if(job.status==='done'){
+            $('log').textContent='《'+title+'》读完了。\nreading: '+(job.readingId||'-')+'\n抽出候选 '+(job.principles||0)+' 条'
+              +'\nreadings 表只新增 1 行（一本=一条）';
+            loadBooks(); resolve(job); return;
+          }
+          if(job.status==='failed'){ reject(new Error(job.error||'读书任务失败')); return; }
+          if(tries>240){ reject(new Error('等太久了，后台还在跑')); return; }
+          setTimeout(tick,3000);
+        }).catch(function(err){
+          if(tries>3){ reject(err); return; }
+          setTimeout(tick,3000);
+        });
+      }
+      tick();
+    });
+  }
+
+  function run(){
+    if(state.busy) return;
+    state.busy=true; $('go').disabled=true;
+    var p=payload($('text').value,$('title').value);
+    $('log').textContent='整本提交中…（'+(p.mode==='article'?'不切分':p.chapterCount+' 章')+'）';
+    // 让出一次主线程先画出状态
+    setTimeout(function(){
+      post(p).then(function(res){
+        if(res.accepted && res.jobId) return watch(res.jobId,p.title);
+        $('log').textContent='《'+p.title+'》读完了。\nreading: '+(res.readingId||'-')+'\n抽出候选 '+(res.candidates||0)+' 条'
+          +'\nreadings 表只新增 1 行（一本=一条）';
+        loadBooks();
+      }).catch(function(err){
+        $('log').textContent='提交失败：'+err.message+'\n草稿还在，可以直接重试。';
+      }).then(function(){ state.busy=false; refresh(); });
+    },30);
+  }
+
+  function loadBooks(){
+    if(DEMO){ renderBooks([{title:'The Most Human Human',at:Date.now()-864e5,candidates:6}]); return; }
+    fetch(API+'/hello-world/api/growth?limit=200',{credentials:'same-origin'})
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(function(d){ renderBooks(d.readings||[]); })
+      .catch(function(err){ $('books').textContent='加载失败：'+err.message; });
+  }
+  function renderBooks(list){
+    var box=$('books'); box.textContent='';
+    if(!list||!list.length){
+      var e=document.createElement('div'); e.className='empty';
+      var b=document.createElement('b'); b.textContent='还没读过';
+      e.appendChild(b); e.appendChild(document.createTextNode('投一本进来，她会从里面长出自己的原则。'));
+      box.appendChild(e); return;
+    }
+    list.forEach(function(r){
+      var card=document.createElement('div'); card.className='book';
+      card.dataset.id=r.id||''; card.dataset.title=r.title||'未命名';
+      card.title='右键可以从书架删除';
+      var h=document.createElement('div'); h.className='book-h';
+      var t=document.createElement('span'); t.className='book-t'; t.textContent=r.title||'未命名';
+      var w=document.createElement('span'); w.className='when';
+      w.textContent=r.at?new Date(Number(r.at)).toLocaleDateString('zh-CN'):'';
+      h.appendChild(t); h.appendChild(w); card.appendChild(h);
+      var m=document.createElement('div'); m.className='book-m';
+      m.textContent='抽出候选 '+(r.candidates||0)+' 条'; card.appendChild(m); box.appendChild(card);
+    });
+  }
+
+  $('drop').addEventListener('click',function(){ $('file').click(); });
+  $('file').addEventListener('change',function(e){ setFile(e.target.files&&e.target.files[0]); });
+  $('drop').addEventListener('dragover',function(e){ e.preventDefault(); $('drop').classList.add('over'); });
+  $('drop').addEventListener('dragleave',function(){ $('drop').classList.remove('over'); });
+  $('drop').addEventListener('drop',function(e){ e.preventDefault(); $('drop').classList.remove('over'); setFile(e.dataTransfer.files&&e.dataTransfer.files[0]); });
+  $('text').addEventListener('input',function(){
+    if(state.timer) clearTimeout(state.timer);
+    state.timer=setTimeout(function(){ state.timer=null; refresh(); },400);
+  });
+  $('text').addEventListener('blur',refresh);
+  $('title').addEventListener('input',saveDraft);
+  $('go').addEventListener('click',run);
+  $('clear').addEventListener('click',function(){
+    $('text').value=''; $('title').value=''; $('meta').textContent=''; $('log').textContent=''; $('go').disabled=true;
+    try{ localStorage.removeItem(DRAFT_KEY); }catch(e){}
+  });
+
+  function closeMenu(){ $('ctx').hidden=true; state.menuId=''; state.menuTitle=''; }
+  function openMenu(card,x,y){
+    state.menuId=card.dataset.id||''; state.menuTitle=card.dataset.title||'这本书';
+    var menu=$('ctx'); menu.hidden=false;
+    var left=Math.min(x, window.innerWidth-178), top=Math.min(y, window.innerHeight-56);
+    menu.style.left=Math.max(8,left)+'px'; menu.style.top=Math.max(8,top)+'px';
+  }
+  $('books').addEventListener('contextmenu',function(e){
+    var card=e.target.closest?e.target.closest('.book'):null;
+    if(!card) return;
+    e.preventDefault(); openMenu(card,e.clientX,e.clientY);
+  });
+  $('ctx-del').addEventListener('click',function(){
+    var id=state.menuId, title=state.menuTitle||'这本书';
+    if(!id){ closeMenu(); return; }
+    var card=$('books').querySelector('.book[data-id="'+id.replace(/"/g,'\\"')+'"]');
+    if(DEMO){ if(card) card.remove(); closeMenu(); $('log').textContent='已从书架删除《'+title+'》。（demo）'; return; }
+    if(!confirm('从书架删掉《'+title+'》？已经抽出的原则不会删。')){ closeMenu(); return; }
+    post({action:'reading-delete',id:id}).then(function(){
+      closeMenu(); $('log').textContent='已从书架删除《'+title+'》。原则保留。'; loadBooks();
+    }).catch(function(err){
+      closeMenu(); $('log').textContent='删除失败：'+(err.message||err);
+    });
+  });
+  document.addEventListener('click',function(e){ if(!$('ctx').contains(e.target)) closeMenu(); });
+  document.addEventListener('scroll',closeMenu,true);
+  document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeMenu(); });
+
+  $('s1').textContent='按章节标记切分，整本一次提交';
+  $('s2').textContent='短文不切分 · 一本=一条 reading';
+  loadDraft(); refresh(); loadBooks();
+})();
+</script>
+</body>
+</html>
