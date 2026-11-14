@@ -14,6 +14,7 @@ import { ensurePersonaFiles, readSelf } from './lib/persona.js'
 import { normalizeConfig, resolveDataDir, defaultDataDir, isInWorkspace, ensureDir } from './lib/config.js'
 import { extractionDirective } from './lib/chapter-detect.js'
 import { openStore } from './lib/store.js'
+import { ensureInnerSchema } from './lib/inner-state.js'
 import { DigestEngine } from './lib/llm.js'
 import { extractJson } from './lib/util.js'
 import { AgentLayer, blocksText } from './lib/agent-layer.js'
@@ -70,6 +71,10 @@ class Whale {
     this.store = openStore(this.dir)
     assertDeps({ openStore, normalizeConfig, ensurePersonaFiles, extractJson }, 'Whale.constructor')
     this.social = new SocialStore(this.store, this.config)
+    try { ensureInnerSchema(this.store) } catch (err) {
+      // 建表失败不该拖垮启动；功能会降级而不是崩。
+      this.logger?.warn?.('inner schema init failed: ' + (err && err.message))
+    }
     this.attitudes = this.buildAttitudes()
     this.digest = new DigestEngine(ctx, this.config, this.store)
     this.growth = new Growth({
