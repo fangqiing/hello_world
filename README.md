@@ -48,31 +48,45 @@ Grants work the same way: 30-minute TTL, and the requester must have sent a mess
 
 ## Install
 
+Requires dsh ≥ 0.2.0 and Node ≥ 20.
+
 ```bash
-# from your dsh profile directory
-git clone <this-repo> plugins/hello_world
+npx @deepseek-ai/dsh plugin --profile web add github:fangqiing/hello_world
 ```
 
-Then add the bundle to your profile's `cordis.patch.yml`:
+That is the whole install. The bundle ships its own `cordis.patch.yml` (`dsh.bundle.patch`), so dsh inserts the rows for you on add.
+
+**The rows are inserted disabled on purpose** — a plugin that starts talking to people the moment it is installed is a bad neighbour. Open **Settings → Plugins**, enable `hello_world`, and restart. First boot creates `<DSH_HOME>/hello_world/<worldId>/` and writes the three identity templates there.
+
+To enable the sibling packages as well:
+
+```bash
+npx @deepseek-ai/dsh plugin --profile web add github:fangqiing/hello_world   # same package, siblings are entry files
+```
 
 ```yaml
+# then in your profile's cordis.patch.yml
 - insert:
     - id: hello_world
-      name: plugins/hello_world
+      name: hello_world
       config:
         companionName: 助手
         timeZone: Asia/Shanghai
         life: true
-```
-
-Restart dsh. On first boot the plugin creates its data directory at `<DSH_HOME>/hello_world/<worldId>/` and writes the three identity templates there.
-
-To load the siblings, point them at their entry files:
-
-```yaml
     - id: hello_world-console
-      name: plugins/hello_world/plugins/console/entry.js
+      name: hello_world/plugins/console/entry.js
+    - id: hello_world-social
+      name: hello_world/plugins/social/entry.js
 ```
+
+Prefer a working copy over a package install? Clone and point at the directory instead:
+
+```bash
+git clone https://github.com/fangqiing/hello_world plugins/hello_world
+# then: name: plugins/hello_world
+```
+
+Not on npm — `github:` is the supported path. If you want a pinned install, append a tag or commit: `github:fangqiing/hello_world#e320550`.
 
 ## Configuration
 
