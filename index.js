@@ -15,6 +15,7 @@ import { normalizeConfig, resolveDataDir, defaultDataDir, isInWorkspace, ensureD
 import { extractionDirective } from './lib/chapter-detect.js'
 import { openStore } from './lib/store.js'
 import { ensureInnerSchema } from './lib/inner-state.js'
+import { splitBubbles } from './lib/bubbles.js'
 import { DigestEngine } from './lib/llm.js'
 import { extractJson } from './lib/util.js'
 import { AgentLayer, blocksText } from './lib/agent-layer.js'
@@ -85,7 +86,15 @@ class Whale {
         const parts = String(peerId || '').split(':')
         const channelName = parts.length > 1 ? parts[0] : 'wechat'
         const conversationId = parts[parts.length - 1]
-        return this.channels.sendText(channelName, conversationId, text, { agentBypass: true })
+        // 想说的话分成两段更自然时，拆成两条发（最多两条，再多就是刷屏）。
+        const segments = splitBubbles(text)
+        if (!segments.length) segments.push(String(text || ''))
+        let sent = null
+        for (let i = 0; i < segments.length; i += 1) {
+          if (i > 0) await new Promise((resolve) => { setTimeout(resolve, 1200) })
+          sent = await this.channels.sendText(channelName, conversationId, segments[i], { agentBypass: true })
+        }
+        return sent
       },
     })
     this.agentLayer = new AgentLayer(this)
